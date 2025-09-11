@@ -1,6 +1,6 @@
 /*
-13авг25
-Вышибает MQTT. Для проверки решил на время убрать подписку.
+11сен25
+Подключил подписку. В основном для создания скетча для управления реле.
 
 12авг25
 ВНИМАНИЕ!
@@ -8,7 +8,7 @@
 защита поддерживается только в виде авторизации. [github.com]
 Плюс мало информации и примеров.
 ПРИНИМАЮ РЕШЕНИЕ: Отувз от библиотеки EspMQTTClient!
-Перехожу на использование библиотеки 
+Перехожу на использование библиотеки PubSubClient
 
 27июл25
 Подключаю датчик BME280 [NodeMCU_BME280_ThingSpeaktmp.ino]
@@ -111,13 +111,11 @@ unsigned long delayTime = 20000; //интервал равен 20-ти секу�
 
 //char MY_TOPIC[50];  // Буфер для топика
 String MY_TOPIC = "channels/" + String(CHANNEL_ID) + "/publish";
-/*
-String subscribeZhara = "channels/" + String(CHANNEL_ID) + "/subscribe/fields/field5/" + String(apiKey);
-String subscribeKholod = "channels/" + String(CHANNEL_ID) + "/subscribe/fields/field6/" + String(apiKey);
-*/
+
 void ConnectWifi();
 void ConnectMQTT();
 void publishData();
+void mqttSubscribe();
 
 byte tries = 20;  // Попыткок подключения к точке доступа
 
@@ -164,16 +162,16 @@ delay(5000);
 // Форматируем топик
 // Для безопасности используйте snprintf():
 //  snprintf(MY_TOPIC, sizeof(MY_TOPIC), "channels/%d/publish", CHANNEL_ID);
-
+  
+ /*  
+  ВНИМАНИЕ!
+  snprintf НЕ РАБОТАЕТ с Thingspeak MQTT (не выяснил, почему)  
+ */   
 // Установите функцию обработчика сообщений MQTT
- // mqttClient.setCallback(mqttSubscriptionCallback);
+  mqttClient.setCallback(mqttSubscriptionCallback);
   /* Установите буфер для обработки возвращаемого JSON. ПРИМЕЧАНИЕ: Переполнение 
 буфера сообщений приведет к тому, что ваш обратный вызов не будет вызван */
-//  mqttClient.setBufferSize( 2048 );
-
-//Подписываемся на топики управления реле
- //   mqttClient.subscribe(subscribeZhara.c_str());
- //   mqttClient.subscribe(subscribeKholod.c_str());
+  mqttClient.setBufferSize( 2048 );
 
 /* -------------------------------------------------- */
 
@@ -203,6 +201,10 @@ Serial.println();
 
 ConnectMQTT();
 
+//Подписываемся на топики управления реле
+//	mqttSubscribe(CHANNEL_ID, apiKey);
+	mqttSubscribe(CHANNEL_ID);
+
 delay(10000);
 }
 /* <= setup ================================================= */
@@ -218,9 +220,15 @@ void loop()   // => ==========================================
 		ConnectWifi();
 	
 	// Подключитесь, если клиент MQTT не подключен, и повторно подпишитесь на обновления канала
-
-	if(!mqttClient.connected())
-		ConnectMQTT();
+	if (!mqttClient.connected()) 
+	{
+     ConnectMQTT();
+	 
+//	 mqttSubscribe(CHANNEL_ID, apiKey);
+	 mqttSubscribe(CHANNEL_ID);
+	}
+	
+	mqttClient.loop();
 
   temperature = bme.readTemperature();
   humidity = bme.readHumidity();
@@ -257,8 +265,6 @@ void loop()   // => ==========================================
   Serial.print("TW = ");
   Serial.println(TW);
 */
-	mqttClient.loop();
-		
 	if (mqttClient.connected() && ((millis() - lastTime )> delayTime)) 
 //	if ((millis() - lastTime) > delayTime)	
   {	
@@ -279,9 +285,13 @@ void loop()   // => ==========================================
 			Serial.print( "Низкая температура= ");
 			Serial.println(temperature);
 		}
-	
+	/*
+	    if(r1==0)	//для проверки,взял из файла MyMQTT_Th_Deep.ino
+			r1=1;
+		else
+			r1=0;
+	*/
 	    lastTime = millis();
-	
   }
 } 
  /* <= loop ========================================================== */
@@ -289,69 +299,68 @@ void loop()   // => ==========================================
 /*Подпрограммы => ==================================================== */
 
  // Функция обработки сообщений из подписки MQTT
-void mqttSubscriptionCallback(char* myTopic, byte* payload, unsigned int length) 
+//https://www.mathworks.com/help/thingspeak/use-arduino-client-to-publish-to-a-channel.html
+void mqttSubscriptionCallback(char* myTopic, byte* payload, unsigned int length)
 {
+	// Print the details of the message that was received to the serial monitor.
+  Serial.print("\nMessage arrived [");
+  Serial.print(myTopic);
+  Serial.println("] ");
+  
+  String message;  
+  for (int i = 0; i < length; i++) 
+    message += (char)payload[i];
+  
+ Serial.println("message= "); 
+ Serial.println(message);
+ Serial.println();
+/*
+ char *F1 = strstr(myTopic, "field1");
+  if(F1)
+    {
+        // вычисляем позицию подстроки в строке
+        long position = F1 - myTopic;
+        temperature = myTopic[position].toFloat();
+		Serial.print("Temperature: ");
+		Serial.println(temperature);
+    }
+*/
 // Преобразуем payload в строку
-  char message[length + 1];
-  memcpy(message, payload, length);
+ // char message[length + 1];
+//  memcpy(message, payload, length);
   //о функции memcpy: https://ru.linux-console.net/?p=39263
-  message[length] = '\0';  // Добавляем нуль-терминатор
+//  message[length] = '\0';  // Добавляем нуль-терминатор
 
   // Проверяем, на какое поле пришло сообщение
-  
-  /*
   if (strstr(myTopic, "field1") != NULL) 
   {
-    float temperature = atof(message);  // Преобразуем строку в float
+	temperature = message.toFloat();  // Преобразуем строку в float
     Serial.print("Temperature: ");
     Serial.println(temperature);
   }
-  */
- /* 
+  
   if (strstr(myTopic, "field5") != NULL) 
   {
-    float r1 = atof(message);  // Преобразуем строку в float
-	// о функции atof: https://nuancesprog.ru/p/27383/
+	r1 = message.toInt();  // Преобразуем строку в Int
     Serial.print("R1: ");
     Serial.println(r1);
   }
   else if (strstr(myTopic, "field6") != NULL) 
   {
-    float r2 = atof(message);
+	r2 = message.toInt();  // Преобразуем строку в Int
     Serial.print("R2: ");
     Serial.println(r2);
-  }	
-*/
-/*	
+  }
+  
   // Печать подробностей сообщения, которое было получено в серийный монитор
   Serial.print("Message arrived [");
   Serial.print(myTopic);
-  Serial.print("] ");
-  
-  String message;  
-  for (int i = 0; i < length; i++) 
-  {
-//	  message = message + (char)payload[i];
-    //Serial.print((char)payload[i]);
-    message += (char)payload[i];
-  }
- Serial.println(message);
- */
- 
- // Разбор сообщения для извлечения нужных полей [Answer]
-//  float temperature = getValue(message, "field1=");
-//  String r1 = getValueString(message, "field5=");
- // String r2 = getValueString(message, "field6=");
+  Serial.println("] ");
 
-  // Вывод извлеченных значений
-//  Serial.print("Temperature: ");
-//  Serial.println(temperature);
-/*
   Serial.print("Включить охлаждение = ");
   Serial.println(r1);
   Serial.print("Включить обогрев = ");
   Serial.println(r2);
-*/
  
  if(r1 == 1)
  {
@@ -381,8 +390,23 @@ void mqttSubscriptionCallback(char* myTopic, byte* payload, unsigned int length)
   Serial.println();
   Serial.println("-----------------------");  
 }
-/* --------------------------------------------------------------------- */
 
+/* ------------------------------------------------------------ */
+// Subscribe to ThingSpeak channel for updates.
+//void mqttSubscribe(String ChannelID, String API_Key)
+void mqttSubscribe(String ChannelID)
+{
+//String subscribeTermo = "channels/" + String(ChannelID) + "/subscribe";
+String subscribeTermo = "channels/" + String(ChannelID) + "/subscribe" + "/fields" + "/field1";
+String subscribeZhara = "channels/" + String(ChannelID) + "/subscribe" + "/fields" + "/field5";
+String subscribeKholod = "channels/" + String(ChannelID) + "/subscribe" + "/fields" + "/field6";
+
+mqttClient.subscribe(subscribeTermo.c_str());
+mqttClient.subscribe(subscribeZhara.c_str());
+mqttClient.subscribe(subscribeKholod.c_str());
+}
+
+/* ------------------------------------------------------------ */
 void publishData() 
 {
  // if (mqttClient.isConnected() && (millis() - lastTime > delayTime)) 
@@ -433,7 +457,7 @@ pause--;
 			r2 = 1;
 			Serial.println(F("Kholod"));
 		}
-		
+
 	//	Serial.print(F(Температура= "));
 		Serial.println(temperature);
 	//	Serial.print(F("Влажность= "));
@@ -446,12 +470,6 @@ pause--;
 //	Serial.println(t);
 //	Serial.println(F(String(t)));
 //	Serial.println(String(t));
-
-//char payload[150];
-//snprintf(payload, sizeof(payload),"field1=%.2f&field2=%.2f&field3=%.2f&field4=%s&field5=%d&field6=%d",temperature, humidity, pressure, t.c_str(), r1, r2);  // Используйте .c_str() для String
-//snprintf(payload, sizeof(payload),"field1=%s&field2=%s&field3=%s&field4=%s&field5=%d&field6=%d",temperature, humidity, pressure, t.c_str(), r1, r2);  // Используйте .c_str() для String
-//mqttClient.publish(MY_TOPIC, payload);
-
 
   String payload="field1=";
   //payload += String(temperature);
@@ -486,26 +504,24 @@ pause--;
 	{
       Serial.println("Publish failed");
     }
-
-
-/*
- String topicString ="channels/" + String(CHANNEL_ID) + "/publish";
-  mqttClient.publish( topicString.c_str(), field1= 20);
-*/
-
-
-
-
    // Serial.println("Data published");
 	Serial.println();
 //    lastTime = millis();
-// }
+// }// if (mqttClient.isConnected() && (millis() - lastTime > delayTime))
  }
+ 
 /* ------------------------------------------------------------ */
-
+// Publish messages to a ThingSpeak channel.
+/*
+void mqttPublish(long pubChannelID, String message) 
+{
+  String topicString ="channels/" + String( pubChannelID ) + "/publish";
+  mqttClient.publish( topicString.c_str(), message.c_str() );
+}
+*/
+/* --------------------------------------------------------------------- */
 void ConnectWifi()
-{   
-    Serial.print("Connecting to ");             // Печать "Подключение к:"
+{   Serial.print("Connecting to ");             // Печать "Подключение к:"
     Serial.println(ssid);                       // Печать "Название Вашей WiFi сети"
 	WiFi.mode(WIFI_STA); // nodemcu as station
 	WiFi.begin(ssid, pass);                 // Подключение к WiFi Сети
@@ -549,10 +565,7 @@ void ConnectMQTT()
          Serial.print(F("mqtt_pass "));
          Serial.println(SECRET_MQTT_PASSWORD);
          Serial.println();
-		
-		
-		
-		
+
 		// Connect to the MQTT broker
 		Serial.println("Connecting to MQTT...");		
 		if (mqttClient.connect(SECRET_MQTT_CLIENT_ID, SECRET_MQTT_USERNAME, SECRET_MQTT_PASSWORD )) 
@@ -589,6 +602,5 @@ void ConnectMQTT()
         }
     }  
 }
-
 /* <= Подпрограммы ================================================ */
  
