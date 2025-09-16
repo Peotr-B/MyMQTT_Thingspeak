@@ -1,4 +1,11 @@
 /*
+ВАЖНО!
+В ArduinoIDE выбирать плату NodeMCU 1.0 (ESP-12E Module)
+
+16сен25
+Добавил связь с платой ESP8266-01S с WIFI-реле
+скетч <MyMQTT_Th_relay.ino>
+
 11сен25
 Подключил подписку. В основном для создания скетча для управления реле.
 
@@ -102,8 +109,10 @@ int C;  //Upravlenie znacheniem avarijnoy signalizacii, Жарко
 int CN;  //Нормальная температура
 
 String t;	//Температура
-int r1 = 0;	//Включение реле обогрева
-int r2 = 0;	//Включение реле охлаждения
+int r1 = 0;	//Включение реле охлаждения 
+int r2 = 0;	//Включение реле обогрева
+int Cool = 0;	//Включено охлаждение 
+int Heat = 0;	//Включён обогрев
 
 /*Временные задержки для посылки в ThingSpeak*/
 unsigned long lastTime = 0;
@@ -233,6 +242,11 @@ void loop()   // => ==========================================
   temperature = bme.readTemperature();
   humidity = bme.readHumidity();
   pressure = bme.readPressure() / 100.0F * 0.75;
+  
+  if(temperature > C)
+	  digitalWrite(LED, HIGH);
+  else
+	  digitalWrite(LED, LOW);
 
  // TWatZ = TWat+temperature;
 /*	
@@ -274,16 +288,19 @@ void loop()   // => ==========================================
 		{
 			Serial.print( "Повышенная температура= " );
 		    Serial.println(temperature);
+		//	digitalWrite(LED, HIGH);
 		}
 		else if(temperature > CN) 
 		{
 			Serial.print( "Нормальная температура= " );
 			Serial.println(temperature);
+		//	digitalWrite(LED, LOW);
 		}
 		else
 		{
 			Serial.print( "Низкая температура= ");
 			Serial.println(temperature);
+		//	digitalWrite(LED, LOW);
 		}
 	/*
 	    if(r1==0)	//для проверки,взял из файла MyMQTT_Th_Deep.ino
@@ -352,31 +369,59 @@ void mqttSubscriptionCallback(char* myTopic, byte* payload, unsigned int length)
     Serial.println(r2);
   }
   
+  else if (strstr(myTopic, "field7") != NULL) 
+  {
+	Cool = message.toInt();  // Преобразуем строку в Int
+    Serial.print("Cool: ");
+    Serial.println(Cool);
+  }
+  
+  else if (strstr(myTopic, "field8") != NULL) 
+  {
+	Heat = message.toInt();  // Преобразуем строку в Int
+    Serial.print("Heat: ");
+    Serial.println(Heat);
+  }
+  
   // Печать подробностей сообщения, которое было получено в серийный монитор
   Serial.print("Message arrived [");
   Serial.print(myTopic);
   Serial.println("] ");
-
+/*
   Serial.print("Включить охлаждение = ");
   Serial.println(r1);
   Serial.print("Включить обогрев = ");
   Serial.println(r2);
- 
+ */
  if(r1 == 1)
  {
-	 digitalWrite(LED, HIGH);
+//	 digitalWrite(LED, HIGH);
 	 Serial.println("Включение охлаждения");
+ }
+ 
+  if(Cool == 1)
+ {
+//	 digitalWrite(LED, HIGH);
+	 Serial.println("ОХЛАЖДЕНИЕ");
  }
  else if(r2 == 1)
  {
 	 Serial.println("Включение обогрева");
-	 digitalWrite(LED, LOW);
+//	 digitalWrite(LED, LOW);
  }
+ 
+  else if(Heat == 1)
+ {
+	 Serial.println("ОБОГРЕВ");
+//	 digitalWrite(LED, LOW);
+ }
+ /*
  else
  {
 	 Serial.println("Температура в норме");
 	 digitalWrite(LED, LOW);
  }
+ */
  /*
   if (message == "on") 
   {
@@ -400,10 +445,14 @@ void mqttSubscribe(String ChannelID)
 String subscribeTermo = "channels/" + String(ChannelID) + "/subscribe" + "/fields" + "/field1";
 String subscribeZhara = "channels/" + String(ChannelID) + "/subscribe" + "/fields" + "/field5";
 String subscribeKholod = "channels/" + String(ChannelID) + "/subscribe" + "/fields" + "/field6";
+String subscribeCool = "channels/" + String(ChannelID) + "/subscribe" + "/fields" + "/field7";
+String subscribeHeat = "channels/" + String(ChannelID) + "/subscribe" + "/fields" + "/field8";
 
 mqttClient.subscribe(subscribeTermo.c_str());
 mqttClient.subscribe(subscribeZhara.c_str());
 mqttClient.subscribe(subscribeKholod.c_str());
+mqttClient.subscribe(subscribeCool.c_str());
+mqttClient.subscribe(subscribeHeat.c_str());
 }
 
 /* ------------------------------------------------------------ */
